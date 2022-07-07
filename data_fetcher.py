@@ -1,5 +1,5 @@
 import sys
-
+import glob
 from scp import SCPClient
 import paramiko
 
@@ -18,9 +18,10 @@ def main(server, password, local_path, animal_id):
     files=find_data(client, animal_id)
     scp = scpClient(client)
     # local_path = "./fetcher_test/"
-    #This is default Bruker directory keeping the scan data, change if not
+    #Set below the directory where the scan data is originally stored
     remote_path = "/opt/PV6.0.1/data/mri/"
-    get_data(client, files, local_path, remote_path)
+    local_files=get_local_data_list(animal_id)
+    get_data(client, files, local_path, remote_path,local_files)
 
 def createSSHClient(server, port, user, password):
     client = paramiko.SSHClient()
@@ -43,12 +44,26 @@ def scpClient(client):
     scp = SCPClient(client.get_transport(), progress=progress)
     return scp
 
-def get_data(client, files, local_path, remote_path):
+def get_data(client, files, local_path, remote_path, local_files):
     scp = SCPClient(client.get_transport(),  progress=progress)
     for file in files:
-        full_path = remote_path + file
-        scp.get(full_path, local_path=local_path, recursive=True)
+        if not file in local_files:
+            print("Fetching " + file)
+            full_path = remote_path + file
+            scp.get(full_path, local_path=local_path, recursive=True)
+            print("complete")
     scp.close()
+
+def get_local_data_list(animal_id):
+    file_list=glob.glob("./samri_bindata/" + animal_id +"/*")
+    files = []
+    for file in file_list:
+        files.append(file.split("/")[-1])
+
+    return(files)
+
+
+
 def progress(filename, size, sent):
     sys.stdout.write("%s's progress: %.2f%%   \r" % (filename, float(sent)/float(size)*100) )
 
