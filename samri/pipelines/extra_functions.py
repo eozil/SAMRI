@@ -734,11 +734,14 @@ def get_bids_scan(data_selection,
 					extra=extra,
 					extension='',
 					)
+
 			scan_path = nii_path
 		else:
 			scan_path = os.path.dirname(nii_path)
 			nii_name = os.path.basename(nii_path)
 
+		# Adding the scan index to fix overwriting issue for the scans having the same task and type name
+		nii_name = nii_name + "_ind" + str(ind_type)
 		eventfile_name = bids_naming(subject_session, filtered_data,
 				extra=extra,
 				extension='.tsv',
@@ -748,6 +751,9 @@ def get_bids_scan(data_selection,
 				extra=extra,
 				extension='.json',
 				)
+
+		#Adding the scan index to metadata file
+		metadata_filename = metadata_filename[:-5]+"_ind" + str(ind_type)+metadata_filename[-5:]
 
 		dict_slice = filtered_data.to_dict('records')[0]
 
