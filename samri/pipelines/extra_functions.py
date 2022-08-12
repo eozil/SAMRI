@@ -712,24 +712,25 @@ def get_bids_scan(data_selection,
 	if filtered_data.empty:
 		raise Exception("SAMRIError: Does not exist: " + str(selector[0]) + str(selector[1]) + str(ind_type))
 	else:
-		subject = filtered_data['subject'].item()
-		session = filtered_data['session'].item()
+		subject = filtered_data['subject'].iloc[0]
+		session = filtered_data['session'].iloc[0]
+		print(filtered_data.columns)
 		try:
-			typ = filtered_data['type'].item()
+			typ = filtered_data['type'].iloc[0]
 		except:
 			typ = ""
 		try:
-			task = filtered_data['task'].item()
+			task = filtered_data['task'].iloc[0]
 		except:
 			task = ""
 		subject_session = [subject, session]
 		#scan_path = os.path.join(bids_base, 'sub-' + subject + '/', 'ses-' + session + '/', typ )
 
 		try:
-			nii_path = filtered_data['path'].item()
+			nii_path = filtered_data['path'].iloc[0]
 		except KeyError:
-			nii_path = filtered_data['measurement'].item()
-			nii_path += '/'+filtered_data['scan'].item()
+			nii_path = filtered_data['measurement'].iloc[0]
+			nii_path += '/'+filtered_data['scan'].iloc[0]
 			nii_name = bids_naming(subject_session, filtered_data,
 					extra=extra,
 					extension='',
