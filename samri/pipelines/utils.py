@@ -516,12 +516,12 @@ def bids_naming(subject_session, metadata,
 		pass
 	else:
 		if not task.isnull().all():
-			task = task.item()
+			task = task.iloc[0]
 			filename += '_task-{}'.format(task)
 	if 'acq' in extra:
 		acq = selection['acquisition']
 		if not acq.isnull().all():
-			acq = acq.item()
+			acq = acq.iloc[0]
 			filename += '_acq-{}'.format(acq)
 	if 'run' in extra:
 		acq = selection['run']
