@@ -692,7 +692,7 @@ def generic(bids_base, template,
 
 
 def common_select(bids_base, out_base, workflow_name, template, registration_mask, functional_match, structural_match,
-                  subjects, sessions, exclude):
+                  highres_match, subjects, sessions, exclude):
     """Common selection and variable processing function for SAMRI preprocessing workflows.
 
 	Parameters
@@ -772,11 +772,12 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
     out_dir = path.join(out_base, workflow_name)
 
     data_selection = bids_data_selection(bids_base, structural_match, functional_match, subjects, sessions)
+    highres_data_selection = bids_data_selection(bids_base, highres_match, functional_match, subjects, sessions)
     workdir = out_dir + '_work'
     if not os.path.exists(workdir):
         os.makedirs(workdir)
     data_selection.to_csv(path.join(workdir, 'data_selection.csv'))
-
+    highres_data_selection.to_csv(path.join(workdir, 'highres_data_selection.csv'))
     # generate functional and structural scan types
     # PyBIDS 0.6.5 and 0.10.2 compatibility
     try:
@@ -796,9 +797,19 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
     try:
         _func_ind = data_selection[data_selection["type"] == "func"]
         _struct_ind = data_selection[data_selection["type"] == "anat"]
+
     except KeyError:
         _func_ind = data_selection[data_selection["datatype"] == "func"]
         _struct_ind = data_selection[data_selection["datatype"] == "anat"]
+
+    try:
+        highres_ind = highres_data_selection["ind"].tolist()
+        print("highres ind success")
+        print(highres_ind)
+    except KeyError:
+        _highres_ind = highres_data_selection[highres_data_selection["type"] == "anat"]
+        highres_ind = _highres_ind.index.tolist()
+
 
     func_ind = _func_ind.index.tolist()
     struct_ind = _struct_ind.index.tolist()
@@ -806,31 +817,34 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
     if True:
         print(data_selection)
         print(subjects_sessions)
-    return bids_base, out_base, out_dir, template, registration_mask, data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind
+    return bids_base, out_base, out_dir, template, registration_mask, data_selection, highres_data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, highres_ind
 
 
 def structural(bids_base, template,
-                          autorotate=False,
-                          debug=False,
-                          functional_blur_xy=False,
-                          functional_match={},
-                          functional_registration_method="composite",
-                          keep_work=False,
-                          n_jobs=False,
-                          n_jobs_percentage=0.8,
-                          out_base=None,
-                          realign="time",
-                          registration_mask="",
-                          sessions=[],
-                          structural_match={},
-                          subjects=[],
-                          tr=1,
-                          workflow_name='generic',
-                          params={},
-                          phase_dictionary=GENERIC_PHASES,
-                          enforce_dummy_scans=DUMMY_SCANS,
-                          exclude={},
-                          ):
+               highrestemplate,
+               template_highresmatch,
+               autorotateFlag=False,
+               debug=False,
+               functional_blur_xy=False,
+               functional_match={},
+               highres_match={},
+               functional_registration_method="composite",
+               keep_work=False,
+               n_jobs=False,
+               n_jobs_percentage=0.8,
+               out_base=None,
+               realign="time",
+               registration_mask="",
+               sessions=[],
+               structural_match={},
+               subjects=[],
+               tr=1,
+               workflow_name='generic',
+               params={},
+               phase_dictionary=GENERIC_PHASES,
+               enforce_dummy_scans=DUMMY_SCANS,
+               exclude={},
+               ):
     """
 	Structural preprocessing and registration workflow for small animal data in BIDS format.
 
@@ -885,7 +899,7 @@ def structural(bids_base, template,
 		Top level name for the output directory.
 	"""
 
-    bids_base, out_base, out_dir, template, registration_mask, data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind = common_select(
+    bids_base, out_base, out_dir, template, registration_mask, data_selection, highres_data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, highres_ind = common_select(
         bids_base,
         out_base,
         workflow_name,
@@ -893,9 +907,10 @@ def structural(bids_base, template,
         registration_mask,
         functional_match,
         structural_match,
+        highres_match,
         subjects,
         sessions,
-        exclude,
+        exclude
     )
 
     if not n_jobs:
@@ -903,6 +918,7 @@ def structural(bids_base, template,
 
     # ADDING SELECTABLE NODES AND EXTENDING WORKFLOW AS APPROPRIATE:
     s_biascorrect, f_biascorrect = real_size_nodes()
+    highres_biascorrect = highres_real_size_node()
 
     dummy_scans = pe.Node(name='dummy_scans', interface=util.Function(function=force_dummy_scans,
                                                                       input_names=inspect.getargspec(force_dummy_scans)[
@@ -935,11 +951,38 @@ def structural(bids_base, template,
         get_s_scan.inputs.bids_base = bids_base
         get_s_scan.iterables = ("ind_type", struct_ind)
 
+        print("HIGH RES SELECTION")
+        print(highres_data_selection)
+
+        get_highres_scan = pe.Node(name='get_highres_scan', interface=util.Function(function=get_bids_scan,
+                                                                                    input_names=
+                                                                                    inspect.getargspec(get_bids_scan)[
+                                                                                        0],
+                                                                                    output_names=['scan_path',
+                                                                                                  'scan_type',
+                                                                                                  'task',
+                                                                                                  'nii_path',
+                                                                                                  'nii_name',
+                                                                                                  'events_name',
+                                                                                                  'subject_session',
+                                                                                                  'metadata_filename',
+                                                                                                  'dict_slice',
+                                                                                                  'ind_type']))
+
+        get_highres_scan.inputs.ignore_exception = True
+        get_highres_scan.inputs.data_selection = highres_data_selection
+        get_highres_scan.inputs.bids_base = bids_base
+        get_highres_scan.iterables = ("ind_type", highres_ind)
+
         # s_register, s_warp, f_register, f_warp = generic_registration(template,
         # 	structural_mask=registration_mask,
         # 	phase_dictionary=phase_dictionary,
         # 	)
-        s_register, s_warp = structural_registration(template)  # Eminhan
+
+        # Structural registration nodes
+        s_register, s_warp = structural_registration(template)
+        highres_warp = highres_warp_node(template_highresmatch)
+        s_highresatlas_register, s_highresatlas_warp = structural_registration(highrestemplate)
 
         workflow_connections = [
             (get_s_scan, s_warp, [('nii_name', 'output_image')]),
@@ -968,30 +1011,18 @@ def structural(bids_base, template,
             # (get_s_scan, s_biascorrect, [('nii_path', 'input_image')]),
         # ])
 
-    # find_physio = pe.Node(name='find_physio', interface=util.Function(function=corresponding_physiofile,input_names=inspect.getargspec(corresponding_physiofile)[0], output_names=['physiofile','meta_physiofile']))
-    #
-    # get_f_scan = pe.Node(name='get_f_scan', interface=util.Function(function=get_bids_scan,input_names=inspect.getargspec(get_bids_scan)[0], output_names=['scan_path','scan_type','task', 'nii_path', 'nii_name', 'events_name', 'subject_session', 'metadata_filename', 'dict_slice', 'ind_type']))
-    # get_f_scan.inputs.ignore_exception = True
-    # get_f_scan.inputs.data_selection = data_selection
-    # get_f_scan.inputs.bids_base = bids_base
-    # get_f_scan.iterables = ("ind_type", func_ind)
-
-    # # Eminhan
-    # workflow_connections = [
-    # 	(get_f_scan, dummy_scans, [('nii_path', 'in_file')]),
-    # 	(dummy_scans, events_file, [('deleted_scans', 'forced_dummy_scans')]),
-    # 	(get_f_scan, events_file, [
-    # 		('nii_path', 'timecourse_file'),
-    # 		('task', 'task'),
-    # 		('scan_path', 'scan_dir')
-    # 		]),
-    # 	# (get_f_scan, find_physio, [('nii_path', 'nii_path')]),
-    # 	(events_file, datasink, [('out_file', 'func.@events')]),
-    # # 	(find_physio, datasink, [('physiofile', 'func.@physio')]),
-    # # 	(find_physio, datasink, [('meta_physiofile', 'func.@meta_physio')]),
-    # 	(get_f_scan, events_file, [('events_name', 'out_file')]),
-    # 	(get_f_scan, datasink, [(('subject_session',ss_to_path), 'container')]),
-    # 	]
+    if highres_match:
+        # Does the same get_s_scan node works via changing the input data selection?
+        # or, is it required to create a dedicated node get_highres_scan
+        workflow_connections.extend([
+            (get_s_scan, get_highres_scan, [('subject_session', 'selector')]),
+            (get_highres_scan, highres_warp, [('nii_name', 'output_image')]),
+            # (get_highres_scan, highres_biascorrect, [('nii_path', 'input_image')]),
+            (s_register, highres_warp, [('composite_transform', 'transforms')]),
+            # (highres_biascorrect, highres_warp, [('output_image', 'input_image')]),
+            (get_highres_scan, highres_warp, [('nii_path', 'input_image')]),
+            (highres_warp, datasink, [('output_image', 'highres')]),
+        ])
 
     if realign == "space":
         realigner = pe.Node(interface=spm.Realign(), name="realigner")
