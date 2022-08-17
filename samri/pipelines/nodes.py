@@ -259,6 +259,19 @@ def generic_registration(template,
 
 	return s_registration, s_warp, f_registration, f_warp
 
+
+def highres_warp_node(template, num_threads=4):
+    highres_warp = pe.Node(ants.ApplyTransforms(), name="highres_warp")
+    highres_warp.inputs.reference_image = path.abspath(path.expanduser(template))
+    highres_warp.inputs.input_image_type = 0
+    highres_warp.inputs.interpolation = 'BSpline'
+    highres_warp.inputs.interpolation_parameters = (5,)
+    highres_warp.inputs.invert_transform_flags = [False]
+    highres_warp.num_threads = num_threads
+
+    return highres_warp
+
+
 def functional_registration(template,
 	mask='/usr/share/mouse-brain-templates/dsurqec_200micron_mask.nii',
 	num_threads=4,
@@ -309,6 +322,19 @@ def functional_registration(template,
 	warp.interface.mem_gb = 16
 
 	return f_registration, warp
+
+
+def highres_real_size_node():
+    highres_biascorrect = pe.Node(interface=ants.N4BiasFieldCorrection(), name="highres_biascorrect")
+    highres_biascorrect.inputs.dimension = 3
+    highres_biascorrect.inputs.bspline_fitting_distance = 10
+    highres_biascorrect.inputs.bspline_order = 4
+    highres_biascorrect.inputs.shrink_factor = 2
+    highres_biascorrect.inputs.n_iterations = [150, 100, 50, 30]
+    highres_biascorrect.inputs.convergence_threshold = 1e-16
+
+    return highres_biascorrect
+
 
 def real_size_nodes():
 	s_biascorrect = pe.Node(interface=ants.N4BiasFieldCorrection(), name="s_biascorrect")
