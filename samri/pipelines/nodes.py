@@ -36,39 +36,22 @@ def autorotate(template,
 	flt_res = flt.run()
 	return flt_res
 
-def structural_registration(template, num_threads=4):
-	registration = pe.Node(ants.Registration(), name="s_register")
-	registration.inputs.fixed_image = path.abspath(path.expanduser(template))
-	registration.inputs.output_transform_prefix = "output_"
-	registration.inputs.transforms = ['Affine', 'SyN'] ##
-	registration.inputs.transform_parameters = [(1.0,), (1.0, 3.0, 5.0)] ##
-	registration.inputs.number_of_iterations = [[2000, 1000, 500], [100, 100, 100]] #
-	registration.inputs.dimension = 3
-	registration.inputs.write_composite_transform = True
-	registration.inputs.collapse_output_transforms = True
-	registration.inputs.initial_moving_transform_com = True
-	# Tested on Affine transform: CC takes too long; Demons does not tilt, but moves the slices too far caudally; GC tilts too much on; MI and MeanSquares seem equally good
-	registration.inputs.metric = ['MeanSquares', 'Mattes']
-	registration.inputs.metric_weight = [1, 1]
-	registration.inputs.radius_or_number_of_bins = [16, 32] #
-	registration.inputs.sampling_strategy = ['Random', None]
-	registration.inputs.sampling_percentage = [0.3, 0.3]
-	registration.inputs.convergence_threshold = [1.e-11, 1.e-8] #
-	registration.inputs.convergence_window_size = [20, 20]
-	registration.inputs.smoothing_sigmas = [[4, 2, 1], [4, 2, 1]]
-	registration.inputs.sigma_units = ['vox', 'vox']
-	registration.inputs.shrink_factors = [[3, 2, 1],[3, 2, 1]]
-	registration.inputs.use_estimate_learning_rate_once = [True, True]
-	# if the fixed_image is not acquired similarly to the moving_image (e.g. RARE to histological (e.g. AMBMC)) this should be False
-	registration.inputs.use_histogram_matching = [False, False]
-	registration.inputs.winsorize_lower_quantile = 0.005
-	registration.inputs.winsorize_upper_quantile = 0.995
-	registration.inputs.args = '--float'
-	registration.inputs.num_threads = num_threads
+
+# def structural_registration(template, num_threads=4):
+def structural_registration(template,
+                            name,
+                            reference_template="./WHS_SD_rat_atlas_v4_pack/WHS_SD_rat_T2star_v1.01_100um.nii.gz",
+                            structural_mask='',
+                            num_threads=4,
+                            phase_dictionary=GENERIC_PHASES,
+                            # s_phases=['s_translation', 'similarity', 'affine', 'syn'],
+                            s_phases=['s_translation', 'similarity', 'affine', 'rigid', 'syn'],
+                            ):
+    s_phases = [phase for phase in s_phases if phase in phase_dictionary]
 
     s_parameters = [phase_dictionary[selection] for selection in s_phases]
 
-    s_registration = pe.Node(ants.Registration(), name="s_register")
+    s_registration = pe.Node(ants.Registration(), name=name+"_register")
     s_registration.inputs.fixed_image = path.abspath(path.expanduser(template))
     s_registration.inputs.output_transform_prefix = "output_"
     s_registration.inputs.transforms = [i["transforms"] for i in s_parameters]  ##
