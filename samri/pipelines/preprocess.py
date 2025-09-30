@@ -850,6 +850,12 @@ def structural(bids_base, template,
 
 	Parameters
 	----------
+    template_highresmatch : str
+        Path to reference template matching the resolution of the highres scans for warping
+    highrestemplate : str
+        Path to higher resolution template for precision registration
+    highres_match : str
+        Dictionary specifiying a whitelist to use for high resolution structural data inclusion into the workflow
 	bids_base : str
 		Path to the BIDS data set root.
 	template : str
