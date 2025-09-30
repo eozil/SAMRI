@@ -821,9 +821,8 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
 
 
 def structural(bids_base, template,
-               highrestemplate,
-               template_highresmatch,
-               autorotateFlag=False,
+               # presurgery_template="",
+               reference_template="./WHS_SD_rat_atlas_v4_pack/WHS_SD_rat_T2star_v1.01.nii.gz",
                debug=False,
                functional_blur_xy=False,
                functional_match={},
@@ -835,6 +834,7 @@ def structural(bids_base, template,
                out_base=None,
                realign="time",
                registration_mask="",
+               moving_img_mask="",
                sessions=[],
                structural_match={},
                subjects=[],
@@ -844,6 +844,9 @@ def structural(bids_base, template,
                phase_dictionary=GENERIC_PHASES,
                enforce_dummy_scans=DUMMY_SCANS,
                exclude={},
+               presurgery=False,
+               elastic=False,
+               num_threads=4
                ):
     """
 	Structural preprocessing and registration workflow for small animal data in BIDS format.
@@ -905,18 +908,9 @@ def structural(bids_base, template,
 		Top level name for the output directory.
 	"""
 
-    bids_base, out_base, out_dir, template, registration_mask, data_selection, highres_data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, highres_ind = common_select(
-        bids_base,
-        out_base,
-        workflow_name,
-        template,
-        registration_mask,
-        functional_match,
-        structural_match,
-        highres_match,
-        subjects,
-        sessions,
-        exclude
+    bids_base, out_base, out_dir, template, registration_mask, data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, skip_biascorrection = common_select(
+        bids_base, out_base, workflow_name, template, registration_mask, functional_match, structural_match,
+        subjects, sessions, exclude
     )
 
     if not n_jobs:
@@ -980,10 +974,10 @@ def structural(bids_base, template,
         get_highres_scan.inputs.bids_base = bids_base
         get_highres_scan.iterables = ("ind_type", highres_ind)
 
-        # s_register, s_warp, f_register, f_warp = generic_registration(template,
-        # 	structural_mask=registration_mask,
-        # 	phase_dictionary=phase_dictionary,
-        # 	)
+        # # Structural registration nodes
+        # if presurgery:
+        #     template = presurgery_template
+            # reference_template = template
 
         # Structural registration nodes
         s_register, s_warp = structural_registration(template)
@@ -1000,10 +994,18 @@ def structural(bids_base, template,
         if autorotate:
             s_rotated = autorotate(template)
             workflow_connections.extend([
-                (s_biascorrect, s_rotated, [('output_image', 'out_file')]),
-                (s_rotated, s_register, [('out_file', 'moving_image')]),
+                (get_s_scan, s_register, [('nii_path', 'moving_image')]),
+                (s_register, s_warp, [('composite_transform', 'transforms')]),
+                (get_s_scan, s_warp, [('nii_path', 'input_image')]),
+                (s_warp, datasink, [('output_image', 'anat')]),
             ])
         else:
+            workflow_connections = [
+                (get_s_scan, s_warp, [('nii_name', 'output_image')]),
+                (get_s_scan, s_biascorrect, [('nii_path', 'input_image')]),
+                (get_s_scan, datasink, [(('subject_session', ss_to_path), 'container')])
+            ]
+
             workflow_connections.extend([
                 (s_biascorrect, s_register, [('output_image', 'moving_image')]),
                 (s_register, s_warp, [('composite_transform', 'transforms')]),
@@ -1195,6 +1197,9 @@ def structural(bids_base, template,
     except OSError:
         print(
             'We could not write the DOT file for visualization (`dot` function from the graphviz package). This is non-critical to the processing, but you should get this fixed.')
+
+    with open(path.join(workflow.base_dir, workdir_name, 'registration_parameters.txt'), 'w') as convert_file:
+        convert_file.write(json.dumps(GENERIC_PHASES))
 
     workflow.run(plugin="MultiProc", plugin_args={'n_procs': n_jobs})
     copy_bids_files(bids_base, os.path.join(out_base, workflow_name))
