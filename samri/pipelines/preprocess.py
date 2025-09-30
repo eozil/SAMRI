@@ -777,9 +777,18 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
     if not os.path.exists(workdir):
         os.makedirs(workdir)
     data_selection.to_csv(path.join(workdir, 'data_selection.csv'))
-    highres_data_selection.to_csv(path.join(workdir, 'highres_data_selection.csv'))
-    # generate functional and structural scan types
-    # PyBIDS 0.6.5 and 0.10.2 compatibility
+
+    modalities = data_selection["modality"]
+    skip_biascorrection = False
+    if "corrected" in modalities.values:
+        print("Biascorrected data available")
+        skip_biascorrection = True
+
+        #TODO; maybe it is better to move this into extra_functions.py/get_bids_scan() ??
+        #Removing the duplicated biascorred data,
+        data_selection = data_selection.drop_duplicates(subset=["modality"])
+
+
     try:
         functional_scan_types = data_selection.loc[data_selection['type'] == 'func']['acq'].values
         structural_scan_types = data_selection.loc[data_selection['type'] == 'anat']['acq'].values
@@ -794,22 +803,18 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
             data_selection = data_selection[~data_selection[key].isin(exclude[key])]
 
     # PyBIDS 0.6.5 and 0.10.2 compatibility
-    try:
-        _func_ind = data_selection[data_selection["type"] == "func"]
-        _struct_ind = data_selection[data_selection["type"] == "anat"]
+    if skip_biascorrection:
+        _struct_ind = data_selection[data_selection["modality"] == "corrected"]
+        _func_ind = data_selection[data_selection["modality"] == "corrected"]
 
-    except KeyError:
-        _func_ind = data_selection[data_selection["datatype"] == "func"]
-        _struct_ind = data_selection[data_selection["datatype"] == "anat"]
+    else:
+        try:
+            _func_ind = data_selection[data_selection["type"] == "func"]
+            _struct_ind = data_selection[data_selection["type"] == "anat"]
 
-    try:
-        highres_ind = highres_data_selection["ind"].tolist()
-        print("highres ind success")
-        print(highres_ind)
-    except KeyError:
-        _highres_ind = highres_data_selection[highres_data_selection["type"] == "anat"]
-        highres_ind = _highres_ind.index.tolist()
-
+        except KeyError:
+            _func_ind = data_selection[data_selection["datatype"] == "func"]
+            _struct_ind = data_selection[data_selection["datatype"] == "anat"]
 
     func_ind = _func_ind.index.tolist()
     struct_ind = _struct_ind.index.tolist()
@@ -817,7 +822,7 @@ def common_select(bids_base, out_base, workflow_name, template, registration_mas
     if True:
         print(data_selection)
         print(subjects_sessions)
-    return bids_base, out_base, out_dir, template, registration_mask, data_selection, highres_data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, highres_ind
+    return bids_base, out_base, out_dir, template, registration_mask, data_selection, functional_scan_types, structural_scan_types, subjects_sessions, func_ind, struct_ind, skip_biascorrection
 
 
 def structural(bids_base, template,
@@ -950,45 +955,23 @@ def structural(bids_base, template,
         get_s_scan.inputs.data_selection = data_selection
         get_s_scan.inputs.bids_base = bids_base
         get_s_scan.iterables = ("ind_type", struct_ind)
-
-        print("HIGH RES SELECTION")
-        print(highres_data_selection)
-
-        get_highres_scan = pe.Node(name='get_highres_scan', interface=util.Function(function=get_bids_scan,
-                                                                                    input_names=
-                                                                                    inspect.getargspec(get_bids_scan)[
-                                                                                        0],
-                                                                                    output_names=['scan_path',
-                                                                                                  'scan_type',
-                                                                                                  'task',
-                                                                                                  'nii_path',
-                                                                                                  'nii_name',
-                                                                                                  'events_name',
-                                                                                                  'subject_session',
-                                                                                                  'metadata_filename',
-                                                                                                  'dict_slice',
-                                                                                                  'ind_type']))
-
-        get_highres_scan.inputs.ignore_exception = True
-        get_highres_scan.inputs.data_selection = highres_data_selection
-        get_highres_scan.inputs.bids_base = bids_base
-        get_highres_scan.iterables = ("ind_type", highres_ind)
+        get_s_scan.inputs.skip_biascorrection=skip_biascorrection
+        # get_s_scan.inputs.transformation = transformation
 
         # # Structural registration nodes
         # if presurgery:
         #     template = presurgery_template
             # reference_template = template
 
-        # Structural registration nodes
-        s_register, s_warp = structural_registration(template)
-        highres_warp = highres_warp_node(template_highresmatch)
-        s_highresatlas_register, s_highresatlas_warp = structural_registration(highrestemplate)
-
-        workflow_connections = [
-            (get_s_scan, s_warp, [('nii_name', 'output_image')]),
-            (get_s_scan, s_biascorrect, [('nii_path', 'input_image')]),
-            (get_s_scan, datasink, [(('subject_session', ss_to_path), 'container')])
-        ]
+        s_register, s_warp = structural_registration(template=template, name="s", structural_mask=registration_mask, reference_template=reference_template,
+                                                     moving_img_mask=moving_img_mask, presurgery=presurgery, elastic=elastic, num_threads=num_threads)
+        if skip_biascorrection:
+            print("biascorrected data available, skipping biascorrection node.")
+            workflow_connections = [
+                (get_s_scan, s_warp, [('nii_name', 'output_image')]),
+                # (get_s_scan, s_biascorrect, [('nii_path', 'input_image')]),
+                (get_s_scan, datasink, [(('subject_session', ss_to_path), 'container')])
+            ]
 
         # TODO: incl. in func registration
         if autorotate:

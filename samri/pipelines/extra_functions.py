@@ -679,6 +679,7 @@ def get_bids_scan(data_selection,
 	subject=None,
 	session=None,
 	extra=['acq','run'],
+    skip_biascorrection=False
 	):
 
 	"""Description...
@@ -705,9 +706,26 @@ def get_bids_scan(data_selection,
 	if selector:
 		subject = selector[0]
 		session = selector[1]
-		filtered_data = data_selection[(data_selection["session"] == session)&(data_selection["subject"] == subject)]
+		# TODO: If ind_type does not match, assign without the ind_type to prevent SAMRIError
+		if skip_biascorrection:
+			try:
+				filtered_data = data_selection[(data_selection["session"] == session) & (data_selection["subject"] == subject) & (data_selection["ind"] == ind_type) & (data_selection["modality"] == "corrected")]
+				print("ind successfully matched")
+				print(str(selector[0]) + str(selector[1]) + str(ind_type))
+			except:
+				filtered_data = data_selection[(data_selection["session"] == session) & (data_selection["subject"] == subject) & (data_selection["modality"] == "corrected")]
+		else:
+			try:
+				filtered_data = data_selection[(data_selection["session"] == session) & (data_selection["subject"] == subject) & (data_selection["ind"] == ind_type)]
+				print("ind successfully matched")
+				print(str(selector[0]) + str(selector[1]) + str(ind_type))
+			except:
+				filtered_data = data_selection[(data_selection["session"] == session) & (data_selection["subject"] == subject)]
 	else:
-		filtered_data = data_selection[data_selection.index==ind_type]
+		if skip_biascorrection:
+			filtered_data = data_selection[(data_selection["modality"] == "corrected")]
+		else:
+			filtered_data = data_selection[data_selection.index==ind_type]
 
 	if filtered_data.empty:
 		raise Exception("SAMRIError: Does not exist: " + str(selector[0]) + str(selector[1]) + str(ind_type))
